@@ -15,7 +15,7 @@ cimport numpy as np
 ###########################################################
 
 
-cdef extern from "../build/include/common.h":
+cdef extern from "../src/common.h":
     ctypedef float  float32_t
     ctypedef double float64_t
     cdef enum KLB_DATA_TYPE:
@@ -35,7 +35,7 @@ cdef extern from "../build/include/common.h":
         ZLIB = 2
 
 
-cdef extern from "../build/include/klb_Cwrapper.h":
+cdef extern from "../src/klb_Cwrapper.h":
     cdef int readKLBheader(const char* filename, uint32_t xyzct[5], KLB_DATA_TYPE *dataType, float32_t pixelSize[5], uint32_t blockSize[5], KLB_COMPRESSION_TYPE *compressionType, char metadata[256])
     cdef int readKLBstackInPlace(const char* filename, void* im, KLB_DATA_TYPE *dataType, int numThreads)
     cdef int readKLBroiInPlace(const char* filename, void* im, KLB_DATA_TYPE *dataType, uint32_t xyzctLB[5], uint32_t xyzctUB[5], int numThreads)
@@ -63,7 +63,7 @@ def readheader(
     -------
     header : Dict
         Key-value dict of header fields,
-        incl. 'imagesize', 'datatype', 'pixelspacing'
+        incl. 'imagesize_yxzct', 'datatype', 'pixelspacing_yxzct'
     
     Raises
     ------
@@ -78,10 +78,24 @@ def readheader(
     cdef int errid = readKLBheader(filepath, &imagesize[0], &ktype, &pixelspacing[0], &blocksize[0], &kcompression, <char*> &metadata[0])
     if errid != 0:
         raise IOError("Could not read KLB header of file '%s'. Error code %d" % (filepath, errid))
+
+    # xyz to yxz (KLB to numpy)
+    cdef np.uint32_t tempui = imagesize[0]
+    imagesize[0] = imagesize[1]
+    imagesize[1] = tempui
+
+    tempui = blocksize[0]
+    blocksize[0] = blocksize[1]
+    blocksize[1] = tempui
+
+    cdef np.float32_t tempfl = pixelspacing[0]
+    pixelspacing[0] = pixelspacing[1]
+    pixelspacing[1] = tempfl
+
     return {
-        "imagesize": imagesize,
-        "blocksize": blocksize,
-        "pixelspacing": pixelspacing,
+        "imagesize_yxzct": imagesize,
+        "blocksize_yxzct": blocksize,
+        "pixelspacing_yxzct": pixelspacing,
         "metadata": metadata,
         "datatype": _pytype(ktype),
         "compression": _pycompression(kcompression)
@@ -105,21 +119,27 @@ def readfull(
     
     Returns
     -------
-    A : array, shape(x[,y,z,c,t])
+    A : array, shape(y[,x,z,c,t])
         The entire array stored in the KLB file.
         Trailing singleton dimensions are dropped, but the order is
-        preserved to distinguish e.g. xyt (shape(x,y,1,1,t))
-        from xyz (shape(x,y,z)).
+        preserved to distinguish e.g. xyt (shape(y,x,1,1,t))
+        from xyz (shape(y,x,z)).
 
-        By convention, indexing order is geometric, i.e. column-major.
-    
+        Indexing order is geometric, i.e. column-major.
+        First 2 dimensions are swapped to enable numpy-style indexing.
+
     Raises
     ------
     IOError
     """
     header = readheader(filepath)
-    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = header["imagesize"]
+    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
     cdef np.dtype dtype = header["datatype"]
+
+    # yxz to xyz (numpy to KLB)
+    cdef np.uint32_t temp = imagesize[0]
+    imagesize[0] = imagesize[1]
+    imagesize[1] = temp
 
     # Drop trailing singleton dimensions.
     # Don't squeeze the array to preserve the difference between e.g. xyz and xyt.
@@ -129,14 +149,14 @@ def readfull(
 
     cdef np.ndarray A = np.empty(imagesize[0:ndim], dtype, order="F")
     readfull_inplace(A, filepath, numthreads, True)
-    return A
+    return A.swapaxes(0,1)
 
 
     
 def readroi(
     str filepath,
-    np.ndarray[np.uint32_t, ndim=1] xyzct_min,
-    np.ndarray[np.uint32_t, ndim=1] xyzct_max,
+    np.ndarray[np.uint32_t, ndim=1] yxzct_min,
+    np.ndarray[np.uint32_t, ndim=1] yxzct_max,
     const int numthreads = 1
     ):
     """
@@ -146,22 +166,23 @@ def readroi(
     ---------
     filepath : string
         File system path to KLB file
-    xyzct_min : array, dtype=uint32, shape(1[,1,1,1,1])
+    yxzct_min : array, dtype=uint32, shape(1[,1,1,1,1])
         Start of bounding box to read, vector of length 1-5
-    xyzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
+    yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
         End of bounding box to read (inclusive), vector of length 1-5
     numthreads, int, optional, default = 1
         Number of threads to use for decompression
     
     Returns
     -------
-    A : array, shape(x[,y,z,c,t])
+    A : array, shape(y[,x,z,c,t])
         The content of the bounding box.
         Trailing singleton dimensions are dropped, but the order is
-        preserved to distinguish e.g. xyt (shape(x,y,1,1,t))
-        from xyz (shape(x,y,z)).
+        preserved to distinguish e.g. xyt (shape(y,x,1,1,t))
+        from xyz (shape(y,x,z)).
 
-        By convention, indexing order is geometric, i.e. column-major.
+        Indexing order is geometric, i.e. column-major.
+        First 2 dimensions are swapped to enable numpy-style indexing.
     
     Raises
     ------
@@ -169,7 +190,7 @@ def readroi(
         when indices of requested bounding box is out of bounds
     IOError
     """
-    cdef np.ndarray[np.uint32_t, ndim=1] roisize = 1 + xyzct_max - xyzct_min
+    cdef np.ndarray[np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
 
     # Drop trailing singleton dimensions.
     # Don't squeeze the array to preserve the difference between e.g. xyz and xyt.
@@ -178,21 +199,27 @@ def readroi(
         ndim = ndim - 1
 
     # if needed, pad bounds with 0 until len = 5, which is expected by C function
-    if len(xyzct_min) < 5:
-        xyzct_min = np.hstack(( xyzct_min, np.array([0 for i in range(5-len(xyzct_min))], np.uint32) ))
-    if len(xyzct_max) < 5:
-        xyzct_max = np.hstack(( xyzct_max, np.array([0 for i in range(5-len(xyzct_max))], np.uint32) ))
+    if len(yxzct_min) < 5:
+        yxzct_min = np.hstack(( yxzct_min, np.array([0 for i in range(5-len(yxzct_min))], np.uint32) ))
+    if len(yxzct_max) < 5:
+        yxzct_max = np.hstack(( yxzct_max, np.array([0 for i in range(5-len(yxzct_max))], np.uint32) ))
 
     header = readheader(filepath)
-    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = header["imagesize"]
+    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
     cdef np.dtype dtype = header["datatype"]
     for d in range(5):
-        if xyzct_min[d] > xyzct_max[d] or xyzct_max[d] > imagesize[d] - 1:
-            raise IndexError("Invalid bounding box: %s -> %s, image size %s; file at %s." % (xyzct_min, xyzct_max, imagesize, filepath))
+        if yxzct_min[d] > yxzct_max[d] or yxzct_max[d] > imagesize[d] - 1:
+            raise IndexError("Invalid bounding box: %s -> %s, image size %s (all shapes in order yxczt); file at %s."
+                             % (yxzct_min, yxzct_max, imagesize, filepath))
+
+    # yxz to xyz (numpy to KLB)
+    cdef np.uint32_t temp = roisize[0]
+    roisize[0] = roisize[1]
+    roisize[1] = temp
 
     cdef np.ndarray A = np.empty(roisize[0:ndim], dtype, order="F")
-    readroi_inplace(A, filepath, xyzct_min, xyzct_max, numthreads, True)
-    return A
+    readroi_inplace(A, filepath, yxzct_min, yxzct_max, numthreads, True)
+    return A.swapaxes(0,1)
 
 
 
@@ -212,8 +239,9 @@ def readfull_inplace(
     
     Arguments
     ---------
-    A : array, shape(x[,y,z,c,t])
-        Target array
+    A : array, shape(x[,y,z,c,t]), order='F'
+        Target array, note dimension order!
+        If needed, call A.swapaxes(0,1) to get numpy convention yxzct
     filepath : string
         File system path to KLB file
     numthreads : int, optional, default = 1
@@ -233,16 +261,21 @@ def readfull_inplace(
         header = readheader(filepath)
         if A.dtype != header["datatype"]:
             raise TypeError("KLB type: %s, target type: %s; file at %s." % (header["datatype"], A.dtype, filepath))
-        insize = header["imagesize"]
+
+        insize = header["imagesize_yxzct"]
+        # yxz to xyz (numpy to KLB)
+        temp = insize[0]
+        insize[0] = insize[1]
+        insize[1] = temp
+
         outsize = A.shape
-        print insize, [outsize[i] for i in range(A.ndim)]
         for d in range(A.ndim):
             if insize[d] != outsize[d]:
-                raise IndexError("KLB size: %s, target size: %s; file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
+                raise IndexError("KLB size: %s, target size: %s (all shapes in order xyzct); file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
         # handle trailing singleton dimensions, if any
         for d in range(A.ndim, 5):
             if insize[d] != 1:
-                raise IndexError("KLB size: %s, target size: %s; file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
+                raise IndexError("KLB size: %s, target size: %s (all shapes in order xyzct); file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
 
     if A.flags["F_CONTIGUOUS"] == False:
         raise TypeError("Target array must be column-major, alloacte with keyword order='F'")
@@ -258,8 +291,8 @@ def readfull_inplace(
 def readroi_inplace(
     np.ndarray A,
     str filepath,
-    np.ndarray[np.uint32_t, ndim=1] xyzct_min,
-    np.ndarray[np.uint32_t, ndim=1] xyzct_max,
+    np.ndarray[np.uint32_t, ndim=1] yxzct_min,
+    np.ndarray[np.uint32_t, ndim=1] yxzct_max,
     const int numthreads = 1,
     bool nochecks = False
     ):
@@ -268,13 +301,14 @@ def readroi_inplace(
     
     Arguments
     ---------
-    A : array, shape(x[,y,z,c,t])
-        Target array
+    A : array, shape(x[,y,z,c,t]), order='F'
+        Target array, note dimension order!
+        If needed, call A.swapaxes(0,1) to get numpy convention yxzct
     filepath : string
         File system path to KLB file
-    xyzct_min : array, dtype=uint32, shape(1[,1,1,1,1])
+    yxzct_min : array, dtype=uint32, shape(1[,1,1,1,1])
         Start of bounding box to read, vector of length 1-5
-    xyzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
+    yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
         End of bounding box to read (inclusive), vector of length 1-5
     numthreads, int, optional, default = 1
         Number of threads to use for decompression
@@ -289,37 +323,46 @@ def readroi_inplace(
         when size of target array and KLB file don't match
     IOError
     """
-    cdef np.ndarray[np.uint32_t, ndim=1] roisize = 1 + xyzct_max - xyzct_min
+    # yxz to xyz (numpy to KLB)
+    cdef np.uint32_t temp = yxzct_min[0]
+    yxzct_min[0] = yxzct_min[1]
+    yxzct_min[1] = temp
+
+    temp = yxzct_max[0]
+    yxzct_max[0] = yxzct_max[1]
+    yxzct_max[1] = temp
+
+    cdef np.ndarray[np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
 
     # if needed, pad bounds with 0 until len = 5, which is expected by C function
-    if len(xyzct_min) < 5:
-        xyzct_min = np.hstack(( xyzct_min, np.array([0 for i in range(5-len(xyzct_min))], np.uint32) ))
-    if len(xyzct_max) < 5:
-        xyzct_max = np.hstack(( xyzct_max, np.array([0 for i in range(5-len(xyzct_max))], np.uint32) ))
+    if len(yxzct_min) < 5:
+        yxzct_min = np.hstack(( yxzct_min, np.array([0 for i in range(5-len(yxzct_min))], np.uint32) ))
+    if len(yxzct_max) < 5:
+        yxzct_max = np.hstack(( yxzct_max, np.array([0 for i in range(5-len(yxzct_max))], np.uint32) ))
 
     if not nochecks:
         header = readheader(filepath)
         if A.dtype != header["datatype"]:
             raise TypeError("KLB type: %s, target type: %s; file at %s." % (header["datatype"], A.dtype, filepath))
-        insize = header["imagesize"]
+        insize = header["imagesize_yxzct"]
         outsize = A.shape
         for d in range(A.ndim):
-            if xyzct_min[d] > xyzct_max[d] or xyzct_max[d] > insize[d] - 1:
-                raise IndexError("Invalid bounding box: %s -> %s, image size %s; file at %s." % (xyzct_min, xyzct_max, insize, filepath))
+            if yxzct_min[d] > yxzct_max[d] or yxzct_max[d] > insize[d] - 1:
+                raise IndexError("Invalid bounding box: %s -> %s, image size %s (all shapes in order xyzct); file at %s." % (yxzct_min, yxzct_max, insize, filepath))
 
     if A.flags["F_CONTIGUOUS"] == False:
         raise TypeError("Target array must be column-major, alloacte with keyword order='F'")
 
     cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
     cdef KLB_DATA_TYPE ktype = INT8_TYPE # placeholder, overwritten by function call below
-    cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &ktype, &xyzct_min[0], &xyzct_max[0], numthreads)
+    cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &ktype, &yxzct_min[0], &yxzct_max[0], numthreads)
     if errid != 0:
         raise IOError("Could not read KLB file '%s'. Error code %d" % (filepath, errid))
 
 
 
 ###########################################################
-# Reading KLB files, into pre-allocated memory            #
+# Writing KLB files                                       #
 ###########################################################
 
     
@@ -373,7 +416,7 @@ def writefull(
 # Type conversion helper functions, not exported          #
 ###########################################################
 
-    
+
 cdef inline np.dtype _pytype(const KLB_DATA_TYPE ktype):
     if ktype == UINT8_TYPE:
         return np.dtype(np.uint8)
