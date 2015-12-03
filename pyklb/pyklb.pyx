@@ -15,7 +15,7 @@ cimport numpy as np
 ###########################################################
 
 
-cdef extern from "../src/common.h":
+cdef extern from "common.h":
     ctypedef float  float32_t
     ctypedef double float64_t
     cdef enum KLB_DATA_TYPE:
@@ -35,10 +35,10 @@ cdef extern from "../src/common.h":
         ZLIB = 2
 
 
-cdef extern from "../src/klb_Cwrapper.h":
+cdef extern from "klb_Cwrapper.h":
     cdef int readKLBheader(const char* filename, uint32_t xyzct[5], KLB_DATA_TYPE *dataType, float32_t pixelSize[5], uint32_t blockSize[5], KLB_COMPRESSION_TYPE *compressionType, char metadata[256])
     cdef int readKLBstackInPlace(const char* filename, void* im, KLB_DATA_TYPE *dataType, int numThreads)
-    cdef int readKLBroiInPlace(const char* filename, void* im, KLB_DATA_TYPE *dataType, uint32_t xyzctLB[5], uint32_t xyzctUB[5], int numThreads)
+    cdef int readKLBroiInPlace(const char* filename, void* im, uint32_t xyzctLB[5], uint32_t xyzctUB[5], int numThreads)
     cdef int writeKLBstack(const void* im, const char* filename, uint32_t xyzct[5], KLB_DATA_TYPE dataType, int numThreads, float32_t pixelSize[5], uint32_t blockSize[5], KLB_COMPRESSION_TYPE compressionType, char metadata[256])
 
 
@@ -354,8 +354,7 @@ def readroi_inplace(
         raise TypeError("Target array must be column-major, alloacte with keyword order='F'")
 
     cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
-    cdef KLB_DATA_TYPE ktype = INT8_TYPE # placeholder, overwritten by function call below
-    cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &ktype, &yxzct_min[0], &yxzct_max[0], numthreads)
+    cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &yxzct_min[0], &yxzct_max[0], numthreads)
     if errid != 0:
         raise IOError("Could not read KLB file '%s'. Error code %d" % (filepath, errid))
 
