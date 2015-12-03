@@ -1,66 +1,81 @@
 #!/usr/bin/env python
 
 import os
-import numpy
+import numpy as np
 import urllib
 import platform
 from Cython.Build import cythonize
-from distutils.core import setup, Extension
+try:
+    from setuptools import setup
+    from setuptools import Extension
+except ImportError:
+    from distutils.core import setup
+    from distutils.extension import Extension
 
 
 # version (by commit id) of main library to use
-klbCommitId = "75c5eb72f91a"
+klbCommitId = "8becc998d68f"
 
 
-# downlad required headers
+# download required KLB headers,
+includeDirs = ["build/include"]
+libraryDirs = ["build/lib"]
+klbUrl = "https://bitbucket.org/fernandoamat/keller-lab-block-filetype/raw/%s" % klbCommitId
+
 downloadFiles = [
-    ("src/common.h", "include/common.h"),
-    ("src/klb_Cwrapper.h", "include/klb_Cwrapper.h")
+    # collect downloads, in format (sourceFileUrl, targetDir)
+    ("%s/src/common.h" % klbUrl, includeDirs[0]),
+    ("%s/src/klb_Cwrapper.h" % klbUrl, includeDirs[0])
     ]
-for (source, target) in downloadFiles:
-    targetDir = os.path.abspath(
-        os.path.join("build", os.path.split(target)[0]) )
-    if not os.path.exists(targetDir):
-        os.makedirs(targetDir)
-    urllib.urlretrieve(
-        "https://bitbucket.org/fernandoamat/keller-lab-block-filetype/raw/%s/%s" % (klbCommitId, source),
-        "build/%s" % target)
 
 
 # download main library dependency
 errorMsg = """
 
-    *****************************************************************************++******
+    *************************************************************************************
     * No precompiled binary of main KLB library available.                              *
     * Please download main KLB library source code from the link below and build it.    *
     * https://bitbucket.org/fernandoamat/keller-lab-block-filetype/get/%s.zip *
-    *****************************************************************************++******
+    *************************************************************************************
 
     """ % klbCommitId
-downloadLib = None
+platformName = platform.uname()[0].lower()
 if platform.architecture()[0].startswith("64"):
-    platformName = platform.uname()[0].lower()
     if "linux" in platformName:
-        downloadLib = "libklb.so"
+        downloadFiles.append(( "%s/bin/libklb.so" % klbUrl, "pyklb/lib" ))
     elif "win" in platformName:
-        downloadLib = "klb.dll"
+        downloadFiles.append(( "%s/bin/klb.dll" % klbUrl, "pyklb/lib" ))
+        downloadFiles.append(( "%s/bin/klb.lib" % klbUrl, libraryDirs[0] ))
     elif "mac" in platformName:
-        downloadLib = "libklb.dylib"
-if downloadLib == None:
-    print(errorMsg)
+        downloadFiles.append(( "%s/bin/libklb.dylib" % klbUrl, "pyklb/lib" ))
+    else:
+        print(errorMsg)
 else:
-    urllib.urlretrieve(
-        "https://bitbucket.org/fernandoamat/keller-lab-block-filetype/raw/%s/bin/%s" % (klbCommitId, downloadLib),
-        "pyklb/lib/%s" % downloadLib)
+    print(errorMsg)
 
+
+# fix windows build with msvc
+if "win" in platformName:
+    downloadFiles.append(( "http://msinttypes.googlecode.com/svn/trunk/stdint.h", includeDirs[0] ))
+
+
+# download
+for (source, targetDir) in downloadFiles:
+    if not os.path.exists(targetDir):
+        os.makedirs(targetDir)
+    target = os.path.join(targetDir, os.path.split(source)[1])
+    urllib.urlretrieve( source, target )
+
+
+includeDirs.append( np.get_include() )
 setup(
     name = "pyklb",
-    version = "0.0.1.dev",
+    version = "0.0.1.dev0",
     description = "Python wrapper of the KLB file format, a high-performance file format for up to 5-dimensional arrays.",
     long_description = "See https://bitbucket.org/fernandoamat/keller-lab-block-filetype",
     url = "https://github.com/bhoeckendorf/pyklb",
     ext_modules = cythonize([
-        Extension("pyklb", ["pyklb/pyklb.pyx"], libraries=["klb"])
+        Extension("pyklb", ["pyklb/pyklb.pyx"], include_dirs=includeDirs, library_dirs=libraryDirs, libraries=["klb"])
         ]),
     setup_requires = ["numpy"],
     install_requires = ["numpy"]
