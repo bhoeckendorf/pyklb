@@ -427,6 +427,11 @@ def writefull(
     ------
     IOError
     """
+    if A.flags["F_CONTIGUOUS"] == False:
+        A = A.swapaxes(0,1)
+        if A.flags["F_CONTIGUOUS"] == False:
+            raise TypeError("Target array must be in xyzct shape and order='F'. Use pyklb.allocate(...) function to create target array.")
+
     cdef np.ndarray[np.uint32_t, ndim=1] imagesize = np.ones((5,), np.uint32)
     for d in range(A.ndim):
         imagesize[d] = A.shape[d]
@@ -474,22 +479,22 @@ cdef inline KLB_DATA_TYPE _klbtype(np.dtype ptype):
         return UINT8_TYPE
     elif ptype == np.uint16:
         return UINT16_TYPE
-    elif ptype == UINT32_TYPE:
-        return np.uint32
-    elif ptype == UINT64_TYPE:
-        return np.uint64
-    elif ptype == INT8_TYPE:
-        return np.int8
-    elif ptype == INT16_TYPE:
-        return np.int16
-    elif ptype == INT32_TYPE:
-        return np.int32
-    elif ptype == INT64_TYPE:
-        return np.int64
-    elif ptype == FLOAT32_TYPE:
-        return np.float32
-    elif ptype == FLOAT64_TYPE:
-        return np.float64
+    elif ptype == np.uint32:
+        return UINT32_TYPE
+    elif ptype == np.uint64:
+        return UINT64_TYPE
+    elif ptype == np.int8:
+        return INT8_TYPE
+    elif ptype == np.int16:
+        return INT16_TYPE
+    elif ptype == np.int32:
+        return INT32_TYPE
+    elif ptype == np.int64:
+        return INT64_TYPE
+    elif ptype == np.float32:
+        return FLOAT32_TYPE
+    elif ptype == np.float64:
+        return FLOAT64_TYPE
     raise Exception("Unknown or unsupported data type of KLB array: %d" % ptype)
 
 
