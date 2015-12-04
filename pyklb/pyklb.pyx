@@ -227,7 +227,32 @@ def readroi(
 # Reading KLB files, into pre-allocated memory            #
 ###########################################################
 
-    
+
+def allocate(
+    imagesize_yxzct,
+    datatype
+    ):
+    """
+    Allocate an array to be used with the _inplace fuctions of KLB.
+    The returned array is in xyzct and "F" order, although it will appear to be in yxzct shape.
+
+    Arguments
+    ---------
+    imagesize_yxzct : shape of target array, in yxzct order (as in the 'imagesize_yxzct' field returned by pyklb.readheader(...))
+    datatype : NumPy dtype
+
+    Returns
+    -------
+    NumPy array compatible with pyklb's inplace functions.
+    """
+    # yxz to xyz (numpy to KLB)
+    temp = imagesize_yxzct[0]
+    imagesize_yxzct[0] = imagesize_yxzct[1]
+    imagesize_yxzct[1] = temp
+    return np.empty(imagesize_yxzct, datatype, order="F").swapaxes(0,1)
+
+
+
 def readfull_inplace(
     np.ndarray A,
     str filepath,
@@ -257,6 +282,11 @@ def readfull_inplace(
         when size of target array and KLB file don't match
     IOError
     """
+    if A.flags["F_CONTIGUOUS"] == False:
+        A = A.swapaxes(0,1)
+        if A.flags["F_CONTIGUOUS"] == False:
+            raise TypeError("Target array must be in xyzct shape and order='F'. Use pyklb.allocate(...) function to create target array.")
+
     if not nochecks:
         header = readheader(filepath)
         if A.dtype != header["datatype"]:
@@ -276,9 +306,6 @@ def readfull_inplace(
         for d in range(A.ndim, 5):
             if insize[d] != 1:
                 raise IndexError("KLB size: %s, target size: %s (all shapes in order xyzct); file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
-
-    if A.flags["F_CONTIGUOUS"] == False:
-        raise TypeError("Target array must be column-major, alloacte with keyword order='F'")
 
     cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
     cdef KLB_DATA_TYPE ktype = INT8_TYPE # placeholder, overwritten by function call below
@@ -340,6 +367,11 @@ def readroi_inplace(
     if len(yxzct_max) < 5:
         yxzct_max = np.hstack(( yxzct_max, np.array([0 for i in range(5-len(yxzct_max))], np.uint32) ))
 
+    if A.flags["F_CONTIGUOUS"] == False:
+        A = A.swapaxes(0,1)
+        if A.flags["F_CONTIGUOUS"] == False:
+            raise TypeError("Target array must be in xyzct shape and order='F'. Use pyklb.allocate(...) function to create target array.")
+
     if not nochecks:
         header = readheader(filepath)
         if A.dtype != header["datatype"]:
@@ -349,9 +381,6 @@ def readroi_inplace(
         for d in range(A.ndim):
             if yxzct_min[d] > yxzct_max[d] or yxzct_max[d] > insize[d] - 1:
                 raise IndexError("Invalid bounding box: %s -> %s, image size %s (all shapes in order xyzct); file at %s." % (yxzct_min, yxzct_max, insize, filepath))
-
-    if A.flags["F_CONTIGUOUS"] == False:
-        raise TypeError("Target array must be column-major, alloacte with keyword order='F'")
 
     cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
     cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &yxzct_min[0], &yxzct_max[0], numthreads)
