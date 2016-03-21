@@ -43,20 +43,17 @@ platformName = platform.uname()[0].lower()
 if platform.architecture()[0].startswith("64"):
     if "linux" in platformName:
         downloadFiles.append(( "%s/bin/libklb.so" % klbUrl, "pyklb/lib" ))
+    elif "darwin" in platformName:
+        downloadFiles.append(( "%s/bin/libklb.dylib" % klbUrl, "pyklb/lib" ))
     elif "win" in platformName:
         downloadFiles.append(( "%s/bin/klb.dll" % klbUrl, "pyklb/lib" ))
         downloadFiles.append(( "%s/bin/klb.lib" % klbUrl, libraryDirs[0] ))
-    elif "mac" in platformName:
-        downloadFiles.append(( "%s/bin/libklb.dylib" % klbUrl, "pyklb/lib" ))
+        # fix windows build with msvc
+        downloadFiles.append(( "http://msinttypes.googlecode.com/svn/trunk/stdint.h", includeDirs[0] ))
     else:
         print(errorMsg)
 else:
     print(errorMsg)
-
-
-# fix windows build with msvc
-if "win" in platformName:
-    downloadFiles.append(( "http://msinttypes.googlecode.com/svn/trunk/stdint.h", includeDirs[0] ))
 
 
 # download
@@ -75,7 +72,7 @@ setup(
     long_description = "See https://bitbucket.org/fernandoamat/keller-lab-block-filetype",
     url = "https://github.com/bhoeckendorf/pyklb",
     ext_modules = cythonize([
-        Extension("pyklb", ["pyklb/pyklb.pyx"], include_dirs=includeDirs, library_dirs=libraryDirs, libraries=["klb"])
+        Extension("pyklb", ["pyklb/pyklb.pyx"], include_dirs=includeDirs, library_dirs=libraryDirs + ["pyklb/lib"], libraries=["klb"])
         ]),
     setup_requires = ["numpy"],
     install_requires = ["numpy"]
