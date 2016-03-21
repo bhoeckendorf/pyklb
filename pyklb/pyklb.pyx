@@ -5,9 +5,9 @@ import cython
 cimport cython
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, int8_t, int16_t, int32_t, int64_t
 from cpython cimport bool
-import numpy as np
-cimport numpy as np
-import multiprocessing
+import numpy as _np
+cimport numpy as _np
+import multiprocessing as _mpc
 
 
 
@@ -70,18 +70,18 @@ def readheader(
     ------
     IOError
     """
-    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = np.empty((5,), np.uint32)
-    cdef np.ndarray[np.uint32_t, ndim=1] blocksize = np.empty((5,), np.uint32)
-    cdef np.ndarray[np.float32_t, ndim=1] pixelspacing = np.empty((5,), np.float32)
+    cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = _np.empty((5,), _np.uint32)
+    cdef _np.ndarray[_np.uint32_t, ndim=1] blocksize = _np.empty((5,), _np.uint32)
+    cdef _np.ndarray[_np.float32_t, ndim=1] pixelspacing = _np.empty((5,), _np.float32)
     cdef KLB_DATA_TYPE ktype = UINT8_TYPE
     cdef KLB_COMPRESSION_TYPE kcompression = NONE
-    cdef np.ndarray[np.int8_t, ndim=1] metadata = np.empty((256,), np.int8)
+    cdef _np.ndarray[_np.int8_t, ndim=1] metadata = _np.empty((256,), _np.int8)
     cdef int errid = readKLBheader(filepath, &imagesize[0], &ktype, &pixelspacing[0], &blocksize[0], &kcompression, <char*> &metadata[0])
     if errid != 0:
         raise IOError("Could not read KLB header of file '%s'. Error code %d" % (filepath, errid))
 
     # xyz to yxz (KLB to numpy)
-    cdef np.uint32_t tempui = imagesize[0]
+    cdef _np.uint32_t tempui = imagesize[0]
     imagesize[0] = imagesize[1]
     imagesize[1] = tempui
 
@@ -89,7 +89,7 @@ def readheader(
     blocksize[0] = blocksize[1]
     blocksize[1] = tempui
 
-    cdef np.float32_t tempfl = pixelspacing[0]
+    cdef _np.float32_t tempfl = pixelspacing[0]
     pixelspacing[0] = pixelspacing[1]
     pixelspacing[1] = tempfl
 
@@ -106,7 +106,7 @@ def readheader(
 
 def readfull(
     str filepath,
-    const int numthreads = multiprocessing.cpu_count
+    const int numthreads = _mpc.cpu_count()
     ):
     """
     Read entire array from KLB file
@@ -115,7 +115,7 @@ def readfull(
     ---------
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = multiprocessing.cpu_count
+    numthreads : int, optional, default = _mpc.cpu_count()
         Number of threads to use for decompression
 
     Returns
@@ -134,11 +134,11 @@ def readfull(
     IOError
     """
     header = readheader(filepath)
-    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
-    cdef np.dtype dtype = header["datatype"]
+    cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
+    cdef _np.dtype dtype = header["datatype"]
 
     # yxz to xyz (numpy to KLB)
-    cdef np.uint32_t temp = imagesize[0]
+    cdef _np.uint32_t temp = imagesize[0]
     imagesize[0] = imagesize[1]
     imagesize[1] = temp
 
@@ -148,7 +148,7 @@ def readfull(
     while ndim > 0 and imagesize[ndim-1] == 1:
         ndim = ndim - 1
 
-    cdef np.ndarray A = np.empty(imagesize[0:ndim], dtype, order="F")
+    cdef _np.ndarray A = _np.empty(imagesize[0:ndim], dtype, order="F")
     readfull_inplace(A, filepath, numthreads, True)
     return A.swapaxes(0,1)
 
@@ -156,9 +156,9 @@ def readfull(
 
 def readroi(
     str filepath,
-    np.ndarray[np.uint32_t, ndim=1] yxzct_min,
-    np.ndarray[np.uint32_t, ndim=1] yxzct_max,
-    const int numthreads = multiprocessing.cpu_count
+    _np.ndarray[_np.uint32_t, ndim=1] yxzct_min,
+    _np.ndarray[_np.uint32_t, ndim=1] yxzct_max,
+    const int numthreads = _mpc.cpu_count()
     ):
     """
     Read bounding box from KLB file
@@ -171,7 +171,7 @@ def readroi(
         Start of bounding box to read, vector of length 1-5
     yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
         End of bounding box to read (inclusive), vector of length 1-5
-    numthreads, int, optional, default = multiprocessing.cpu_count
+    numthreads, int, optional, default = _mpc.cpu_count()
         Number of threads to use for decompression
 
     Returns
@@ -191,7 +191,7 @@ def readroi(
         when indices of requested bounding box is out of bounds
     IOError
     """
-    cdef np.ndarray[np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
+    cdef _np.ndarray[_np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
 
     # Drop trailing singleton dimensions.
     # Don't squeeze the array to preserve the difference between e.g. xyz and xyt.
@@ -201,24 +201,24 @@ def readroi(
 
     # if needed, pad bounds with 0 until len = 5, which is expected by C function
     if len(yxzct_min) < 5:
-        yxzct_min = np.hstack(( yxzct_min, np.array([0 for i in range(5-len(yxzct_min))], np.uint32) ))
+        yxzct_min = _np.hstack(( yxzct_min, _np.array([0 for i in range(5-len(yxzct_min))], _np.uint32) ))
     if len(yxzct_max) < 5:
-        yxzct_max = np.hstack(( yxzct_max, np.array([0 for i in range(5-len(yxzct_max))], np.uint32) ))
+        yxzct_max = _np.hstack(( yxzct_max, _np.array([0 for i in range(5-len(yxzct_max))], _np.uint32) ))
 
     header = readheader(filepath)
-    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
-    cdef np.dtype dtype = header["datatype"]
+    cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
+    cdef _np.dtype dtype = header["datatype"]
     for d in range(5):
         if yxzct_min[d] > yxzct_max[d] or yxzct_max[d] > imagesize[d] - 1:
             raise IndexError("Invalid bounding box: %s -> %s, image size %s (all shapes in order yxczt); file at %s."
                              % (yxzct_min, yxzct_max, imagesize, filepath))
 
     # yxz to xyz (numpy to KLB)
-    cdef np.uint32_t temp = roisize[0]
+    cdef _np.uint32_t temp = roisize[0]
     roisize[0] = roisize[1]
     roisize[1] = temp
 
-    cdef np.ndarray A = np.empty(roisize[0:ndim], dtype, order="F")
+    cdef _np.ndarray A = _np.empty(roisize[0:ndim], dtype, order="F")
     readroi_inplace(A, filepath, yxzct_min, yxzct_max, numthreads, True)
     return A.swapaxes(0,1)
 
@@ -250,14 +250,14 @@ def allocate(
     temp = imagesize_yxzct[0]
     imagesize_yxzct[0] = imagesize_yxzct[1]
     imagesize_yxzct[1] = temp
-    return np.empty(imagesize_yxzct, datatype, order="F").swapaxes(0,1)
+    return _np.empty(imagesize_yxzct, datatype, order="F").swapaxes(0,1)
 
 
 
 def readfull_inplace(
-    np.ndarray A,
+    _np.ndarray A,
     str filepath,
-    const int numthreads = multiprocessing.cpu_count,
+    const int numthreads = _mpc.cpu_count(),
     bool nochecks = False
     ):
     """
@@ -270,7 +270,7 @@ def readfull_inplace(
         If needed, call A.swapaxes(0,1) to get numpy convention yxzct
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = multiprocessing.cpu_count
+    numthreads : int, optional, default = _mpc.cpu_count()
         Number of threads to use for decompression
     nochecks : bool, optional, default = False
         Whether to skip type and bounds checks
@@ -308,7 +308,7 @@ def readfull_inplace(
             if insize[d] != 1:
                 raise IndexError("KLB size: %s, target size: %s (all shapes in order xyzct); file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
 
-    cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
+    cdef _np.ndarray[_np.int8_t, ndim=1] buffer = _np.frombuffer(A, _np.int8)
     cdef KLB_DATA_TYPE ktype = INT8_TYPE # placeholder, overwritten by function call below
     cdef int errid = readKLBstackInPlace(filepath, &buffer[0], &ktype, numthreads)
     if errid != 0:
@@ -317,11 +317,11 @@ def readfull_inplace(
 
 
 def readroi_inplace(
-    np.ndarray A,
+    _np.ndarray A,
     str filepath,
-    np.ndarray[np.uint32_t, ndim=1] yxzct_min,
-    np.ndarray[np.uint32_t, ndim=1] yxzct_max,
-    const int numthreads = multiprocessing.cpu_count,
+    _np.ndarray[_np.uint32_t, ndim=1] yxzct_min,
+    _np.ndarray[_np.uint32_t, ndim=1] yxzct_max,
+    const int numthreads = _mpc.cpu_count(),
     bool nochecks = False
     ):
     """
@@ -338,7 +338,7 @@ def readroi_inplace(
         Start of bounding box to read, vector of length 1-5
     yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
         End of bounding box to read (inclusive), vector of length 1-5
-    numthreads, int, optional, default = multiprocessing.cpu_count
+    numthreads, int, optional, default = _mpc.cpu_count()
         Number of threads to use for decompression
     nochecks : bool, optional, default = False
         Whether to skip type and bounds checks
@@ -352,7 +352,7 @@ def readroi_inplace(
     IOError
     """
     # yxz to xyz (numpy to KLB)
-    cdef np.uint32_t temp = yxzct_min[0]
+    cdef _np.uint32_t temp = yxzct_min[0]
     yxzct_min[0] = yxzct_min[1]
     yxzct_min[1] = temp
 
@@ -360,13 +360,13 @@ def readroi_inplace(
     yxzct_max[0] = yxzct_max[1]
     yxzct_max[1] = temp
 
-    cdef np.ndarray[np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
+    cdef _np.ndarray[_np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
 
     # if needed, pad bounds with 0 until len = 5, which is expected by C function
     if len(yxzct_min) < 5:
-        yxzct_min = np.hstack(( yxzct_min, np.array([0 for i in range(5-len(yxzct_min))], np.uint32) ))
+        yxzct_min = _np.hstack(( yxzct_min, _np.array([0 for i in range(5-len(yxzct_min))], _np.uint32) ))
     if len(yxzct_max) < 5:
-        yxzct_max = np.hstack(( yxzct_max, np.array([0 for i in range(5-len(yxzct_max))], np.uint32) ))
+        yxzct_max = _np.hstack(( yxzct_max, _np.array([0 for i in range(5-len(yxzct_max))], _np.uint32) ))
 
     if A.flags["F_CONTIGUOUS"] == False:
         A = A.swapaxes(0,1)
@@ -383,7 +383,7 @@ def readroi_inplace(
             if yxzct_min[d] > yxzct_max[d] or yxzct_max[d] > insize[d] - 1:
                 raise IndexError("Invalid bounding box: %s -> %s, image size %s (all shapes in order xyzct); file at %s." % (yxzct_min, yxzct_max, insize, filepath))
 
-    cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
+    cdef _np.ndarray[_np.int8_t, ndim=1] buffer = _np.frombuffer(A, _np.int8)
     cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &yxzct_min[0], &yxzct_max[0], numthreads)
     if errid != 0:
         raise IOError("Could not read KLB file '%s'. Error code %d" % (filepath, errid))
@@ -396,12 +396,12 @@ def readroi_inplace(
 
 
 def writefull(
-    np.ndarray A,
+    _np.ndarray A,
     str filepath,
-    const int numthreads = multiprocessing.cpu_count,
-    np.ndarray[np.float32_t, ndim=1] pixelspacing = None,
+    const int numthreads = _mpc.cpu_count(),
+    _np.ndarray[_np.float32_t, ndim=1] pixelspacing = None,
     str metadata = None,
-    np.ndarray[np.uint32_t, ndim=1] blocksize = None,
+    _np.ndarray[_np.uint32_t, ndim=1] blocksize = None,
     str compression = "bzip2"
     ):
     """
@@ -413,7 +413,7 @@ def writefull(
         Target array
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = multiprocessing.cpu_count
+    numthreads : int, optional, default = _mpc.cpu_count()
         Number of threads to use for decompression
     pixelspacing : array, dtype=float32, shape(1,1,1,1,1), optional, default=[1,1,1,1,1]
         Spatial and temporal sampling, in µm and s.
@@ -433,13 +433,13 @@ def writefull(
         if A.flags["F_CONTIGUOUS"] == False:
             raise TypeError("Target array must be in xyzct shape and order='F'. Use pyklb.allocate(...) function to create target array.")
 
-    cdef np.ndarray[np.uint32_t, ndim=1] imagesize = np.ones((5,), np.uint32)
+    cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = _np.ones((5,), _np.uint32)
     for d in range(A.ndim):
         imagesize[d] = A.shape[d]
 
     cdef KLB_DATA_TYPE ktype = _klbtype(A.dtype)
     cdef KLB_COMPRESSION_TYPE kcompression = _klbcompression(compression)
-    cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
+    cdef _np.ndarray[_np.int8_t, ndim=1] buffer = _np.frombuffer(A, _np.int8)
     cdef int errid = writeKLBstack(&buffer[0], filepath, &imagesize[0], ktype, numthreads, &pixelspacing[0], &blocksize[0], kcompression, NULL)
     if errid != 0:
         raise IOError("Could not write KLB file '%s'. Error code %d" % (filepath, errid))
@@ -451,50 +451,50 @@ def writefull(
 ###########################################################
 
 
-cdef inline np.dtype _pytype(const KLB_DATA_TYPE ktype):
+cdef inline _np.dtype _pytype(const KLB_DATA_TYPE ktype):
     if ktype == UINT8_TYPE:
-        return np.dtype(np.uint8)
+        return _np.dtype(_np.uint8)
     elif ktype == UINT16_TYPE:
-        return np.dtype(np.uint16)
+        return _np.dtype(_np.uint16)
     elif ktype == UINT32_TYPE:
-        return np.dtype(np.uint32)
+        return _np.dtype(_np.uint32)
     elif ktype == UINT64_TYPE:
-        return np.dtype(np.uint64)
+        return _np.dtype(_np.uint64)
     elif ktype == INT8_TYPE:
-        return np.dtype(np.int8)
+        return _np.dtype(_np.int8)
     elif ktype == INT16_TYPE:
-        return np.dtype(np.int16)
+        return _np.dtype(_np.int16)
     elif ktype == INT32_TYPE:
-        return np.dtype(np.int32)
+        return _np.dtype(_np.int32)
     elif ktype == INT64_TYPE:
-        return np.dtype(np.int64)
+        return _np.dtype(_np.int64)
     elif ktype == FLOAT32_TYPE:
-        return np.dtype(np.float32)
+        return _np.dtype(_np.float32)
     elif ktype == FLOAT64_TYPE:
-        return np.dtype(np.float64)
+        return _np.dtype(_np.float64)
     raise Exception("Unknown or unsupported data type of KLB array: %d" % ktype)
 
 
-cdef inline KLB_DATA_TYPE _klbtype(np.dtype ptype):
-    if ptype == np.uint8:
+cdef inline KLB_DATA_TYPE _klbtype(_np.dtype ptype):
+    if ptype == _np.uint8:
         return UINT8_TYPE
-    elif ptype == np.uint16:
+    elif ptype == _np.uint16:
         return UINT16_TYPE
-    elif ptype == np.uint32:
+    elif ptype == _np.uint32:
         return UINT32_TYPE
-    elif ptype == np.uint64:
+    elif ptype == _np.uint64:
         return UINT64_TYPE
-    elif ptype == np.int8:
+    elif ptype == _np.int8:
         return INT8_TYPE
-    elif ptype == np.int16:
+    elif ptype == _np.int16:
         return INT16_TYPE
-    elif ptype == np.int32:
+    elif ptype == _np.int32:
         return INT32_TYPE
-    elif ptype == np.int64:
+    elif ptype == _np.int64:
         return INT64_TYPE
-    elif ptype == np.float32:
+    elif ptype == _np.float32:
         return FLOAT32_TYPE
-    elif ptype == np.float64:
+    elif ptype == _np.float64:
         return FLOAT64_TYPE
     raise Exception("Unknown or unsupported data type of KLB array: %d" % ptype)
 
