@@ -7,6 +7,7 @@ from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, int8_t, int16_t,
 from cpython cimport bool
 import numpy as np
 cimport numpy as np
+import multiprocessing
 
 
 
@@ -47,24 +48,24 @@ cdef extern from "klb_Cwrapper.h":
 # Reading KLB files, allocating memory as needed          #
 ###########################################################
 
-    
+
 def readheader(
     str filepath
     ):
     """
     Read header of KLB file
-    
+
     Arguments:
     ----------
     filepath : string
         File system path to klb file
-        
+
     Returns
     -------
     header : Dict
         Key-value dict of header fields,
         incl. 'imagesize_yxzct', 'datatype', 'pixelspacing_yxzct'
-    
+
     Raises
     ------
     IOError
@@ -105,18 +106,18 @@ def readheader(
 
 def readfull(
     str filepath,
-    const int numthreads = 1
+    const int numthreads = multiprocessing.cpu_count
     ):
     """
     Read entire array from KLB file
-    
+
     Arguments
     ---------
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = 1
+    numthreads : int, optional, default = multiprocessing.cpu_count
         Number of threads to use for decompression
-    
+
     Returns
     -------
     A : array, shape(y[,x,z,c,t])
@@ -152,16 +153,16 @@ def readfull(
     return A.swapaxes(0,1)
 
 
-    
+
 def readroi(
     str filepath,
     np.ndarray[np.uint32_t, ndim=1] yxzct_min,
     np.ndarray[np.uint32_t, ndim=1] yxzct_max,
-    const int numthreads = 1
+    const int numthreads = multiprocessing.cpu_count
     ):
     """
     Read bounding box from KLB file
-    
+
     Arguments
     ---------
     filepath : string
@@ -170,9 +171,9 @@ def readroi(
         Start of bounding box to read, vector of length 1-5
     yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
         End of bounding box to read (inclusive), vector of length 1-5
-    numthreads, int, optional, default = 1
+    numthreads, int, optional, default = multiprocessing.cpu_count
         Number of threads to use for decompression
-    
+
     Returns
     -------
     A : array, shape(y[,x,z,c,t])
@@ -183,7 +184,7 @@ def readroi(
 
         Indexing order is geometric, i.e. column-major.
         First 2 dimensions are swapped to enable numpy-style indexing.
-    
+
     Raises
     ------
     IndexError
@@ -256,12 +257,12 @@ def allocate(
 def readfull_inplace(
     np.ndarray A,
     str filepath,
-    const int numthreads = 1,
+    const int numthreads = multiprocessing.cpu_count,
     bool nochecks = False
     ):
     """
     Read entire array from KLB file into pre-allocated array
-    
+
     Arguments
     ---------
     A : array, shape(x[,y,z,c,t]), order='F'
@@ -269,11 +270,11 @@ def readfull_inplace(
         If needed, call A.swapaxes(0,1) to get numpy convention yxzct
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = 1
+    numthreads : int, optional, default = multiprocessing.cpu_count
         Number of threads to use for decompression
     nochecks : bool, optional, default = False
         Whether to skip type and bounds checks
-    
+
     Raises
     ------
     TypeError
@@ -320,12 +321,12 @@ def readroi_inplace(
     str filepath,
     np.ndarray[np.uint32_t, ndim=1] yxzct_min,
     np.ndarray[np.uint32_t, ndim=1] yxzct_max,
-    const int numthreads = 1,
+    const int numthreads = multiprocessing.cpu_count,
     bool nochecks = False
     ):
     """
     Read bounding box from KLB file into pre-allocated array
-    
+
     Arguments
     ---------
     A : array, shape(x[,y,z,c,t]), order='F'
@@ -337,11 +338,11 @@ def readroi_inplace(
         Start of bounding box to read, vector of length 1-5
     yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
         End of bounding box to read (inclusive), vector of length 1-5
-    numthreads, int, optional, default = 1
+    numthreads, int, optional, default = multiprocessing.cpu_count
         Number of threads to use for decompression
     nochecks : bool, optional, default = False
         Whether to skip type and bounds checks
-    
+
     Raises
     ------
     TypeError
@@ -393,11 +394,11 @@ def readroi_inplace(
 # Writing KLB files                                       #
 ###########################################################
 
-    
+
 def writefull(
     np.ndarray A,
     str filepath,
-    const int numthreads = 1,
+    const int numthreads = multiprocessing.cpu_count,
     np.ndarray[np.float32_t, ndim=1] pixelspacing = None,
     str metadata = None,
     np.ndarray[np.uint32_t, ndim=1] blocksize = None,
@@ -405,14 +406,14 @@ def writefull(
     ):
     """
     Save array as KLB file, an existing file will be overwritten
-    
+
     Arguments
     ---------
     A : array, shape(x[,y,z,c,t])
         Target array
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = 1
+    numthreads : int, optional, default = multiprocessing.cpu_count
         Number of threads to use for decompression
     pixelspacing : array, dtype=float32, shape(1,1,1,1,1), optional, default=[1,1,1,1,1]
         Spatial and temporal sampling, in µm and s.
@@ -422,7 +423,7 @@ def writefull(
         Shape of compression blocks
     compression : string, optional, default='bzip2'
         Compression method. Valid arguments are 'none', 'bzip2', 'zlib'
-    
+
     Raises
     ------
     IOError
@@ -435,7 +436,7 @@ def writefull(
     cdef np.ndarray[np.uint32_t, ndim=1] imagesize = np.ones((5,), np.uint32)
     for d in range(A.ndim):
         imagesize[d] = A.shape[d]
-    
+
     cdef KLB_DATA_TYPE ktype = _klbtype(A.dtype)
     cdef KLB_COMPRESSION_TYPE kcompression = _klbcompression(compression)
     cdef np.ndarray[np.int8_t, ndim=1] buffer = np.frombuffer(A, np.int8)
