@@ -14,7 +14,7 @@ except ImportError:
 
 
 # version (by commit id) of main library to use
-klbCommitId = "8becc998d68f"
+klbCommitId = "5edcaecc858911c7b3855579bde5cb3116cb4680"
 
 
 # download required KLB headers,
@@ -67,7 +67,7 @@ for (source, targetDir) in downloadFiles:
 includeDirs.append( np.get_include() )
 setup(
     name = "pyklb",
-    version = "0.0.1.dev0",
+    version = "0.0.1.dev1",
     description = "Python wrapper of the KLB file format, a high-performance file format for up to 5-dimensional arrays.",
     long_description = "See https://bitbucket.org/fernandoamat/keller-lab-block-filetype",
     url = "https://github.com/bhoeckendorf/pyklb",
