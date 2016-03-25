@@ -58,13 +58,13 @@ def readheader(
     Arguments:
     ----------
     filepath : string
-        File system path to klb file
+        File system path to KLB file
 
     Returns
     -------
     header : Dict
         Key-value dict of header fields,
-        incl. 'imagesize_yxzct', 'datatype', 'pixelspacing_yxzct'
+        incl. 'imagesize_tczyx', 'datatype', 'pixelspacing_tczyx'
 
     Raises
     ------
@@ -80,23 +80,10 @@ def readheader(
     if errid != 0:
         raise IOError("Could not read KLB header of file '%s'. Error code %d" % (filepath, errid))
 
-    # xyz to yxz (KLB to numpy)
-    cdef _np.uint32_t tempui = imagesize[0]
-    imagesize[0] = imagesize[1]
-    imagesize[1] = tempui
-
-    tempui = blocksize[0]
-    blocksize[0] = blocksize[1]
-    blocksize[1] = tempui
-
-    cdef _np.float32_t tempfl = pixelspacing[0]
-    pixelspacing[0] = pixelspacing[1]
-    pixelspacing[1] = tempfl
-
     return {
-        "imagesize_yxzct": imagesize,
-        "blocksize_yxzct": blocksize,
-        "pixelspacing_yxzct": pixelspacing,
+        "imagesize_tczyx": _np.flipud(imagesize),
+        "blocksize_tczyx": _np.flipud(blocksize),
+        "pixelspacing_tczyx": _np.flipud(pixelspacing),
         "metadata": metadata,
         "datatype": _pytype(ktype),
         "compression": _pycompression(kcompression)
@@ -115,49 +102,43 @@ def readfull(
     ---------
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = _mpc.cpu_count()
+    numthreads : int, optional, default = multiprocessing.cpu_count()
         Number of threads to use for decompression
 
     Returns
     -------
-    A : array, shape(y[,x,z,c,t])
-        The entire array stored in the KLB file.
-        Trailing singleton dimensions are dropped, but the order is
-        preserved to distinguish e.g. xyt (shape(y,x,1,1,t))
-        from xyz (shape(y,x,z)).
-
-        Indexing order is geometric, i.e. column-major.
-        First 2 dimensions are swapped to enable numpy-style indexing.
+    A : array, shape([t,c,z,y,]x)
+        The entire array stored in the KLB file, note dimension order.
+        Leading singleton dimensions are dropped, but the order is
+        preserved to distinguish e.g. xyt (shape(t,1,1,y,x))
+        from xyz (shape(z,y,x)).
 
     Raises
     ------
+    TypeError
+        mismatch of source (KLB file) and target (numpy array) data type
     IOError
     """
     header = readheader(filepath)
-    cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
+    cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = header["imagesize_tczyx"]
     cdef _np.dtype dtype = header["datatype"]
 
-    # yxz to xyz (numpy to KLB)
-    cdef _np.uint32_t temp = imagesize[0]
-    imagesize[0] = imagesize[1]
-    imagesize[1] = temp
-
-    # Drop trailing singleton dimensions.
+    # Drop leading singleton dimensions.
     # Don't squeeze the array to preserve the difference between e.g. xyz and xyt.
-    cdef int ndim = len(imagesize)
-    while ndim > 0 and imagesize[ndim-1] == 1:
-        ndim = ndim - 1
+    cdef int d = 0
+    while d < len(imagesize) and imagesize[d] == 1:
+        d = d + 1
 
-    cdef _np.ndarray A = _np.empty(imagesize[0:ndim], dtype, order="F")
+    cdef _np.ndarray A = _np.empty(imagesize[d:], dtype)
     readfull_inplace(A, filepath, numthreads, True)
-    return A.swapaxes(0,1)
+    return A
 
 
 
 def readroi(
     str filepath,
-    _np.ndarray[_np.uint32_t, ndim=1] yxzct_min,
-    _np.ndarray[_np.uint32_t, ndim=1] yxzct_max,
+    tczyx_min,
+    tczyx_max,
     const int numthreads = _mpc.cpu_count()
     ):
     """
@@ -167,91 +148,40 @@ def readroi(
     ---------
     filepath : string
         File system path to KLB file
-    yxzct_min : array, dtype=uint32, shape(1[,1,1,1,1])
-        Start of bounding box to read, vector of length 1-5
-    yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
-        End of bounding box to read (inclusive), vector of length 1-5
-    numthreads, int, optional, default = _mpc.cpu_count()
+    tczyx_min : vector/list/tuple of length 1-5, order ([t,c,z,y,]x)
+        Start of bounding box to read
+    tczyx_max : vector/list/tuple of length 1-5, order ([t,c,z,y,]x)
+        End of bounding box to read, inclusive
+    numthreads, int, optional, default = multiprocessing.cpu_count()
         Number of threads to use for decompression
 
     Returns
     -------
-    A : array, shape(y[,x,z,c,t])
-        The content of the bounding box.
-        Trailing singleton dimensions are dropped, but the order is
-        preserved to distinguish e.g. xyt (shape(y,x,1,1,t))
-        from xyz (shape(y,x,z)).
-
-        Indexing order is geometric, i.e. column-major.
-        First 2 dimensions are swapped to enable numpy-style indexing.
+    A : array, shape([t,c,z,y,]x)
+        The content of the bounding box, note dimension order.
+        Leading singleton dimensions are dropped, but the order is
+        preserved to distinguish e.g. xyt (shape(t,1,1,y,x))
+        from xyz (shape(z,y,x)).
 
     Raises
     ------
+    TypeError
+        mismatch of source (KLB file) and target (numpy array) data type
     IndexError
-        when indices of requested bounding box is out of bounds
+        when requested bounding box is out of bounds
     IOError
     """
-    cdef _np.ndarray[_np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
-
-    # Drop trailing singleton dimensions.
-    # Don't squeeze the array to preserve the difference between e.g. xyz and xyt.
-    cdef int ndim = len(roisize)
-    while ndim > 0 and roisize[ndim-1] == 1:
-        ndim = ndim - 1
-
-    # if needed, pad bounds with 0 until len = 5, which is expected by C function
-    if len(yxzct_min) < 5:
-        yxzct_min = _np.hstack(( yxzct_min, _np.array([0 for i in range(5-len(yxzct_min))], _np.uint32) ))
-    if len(yxzct_max) < 5:
-        yxzct_max = _np.hstack(( yxzct_max, _np.array([0 for i in range(5-len(yxzct_max))], _np.uint32) ))
-
     header = readheader(filepath)
-    cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = header["imagesize_yxzct"]
-    cdef _np.dtype dtype = header["datatype"]
-    for d in range(5):
-        if yxzct_min[d] > yxzct_max[d] or yxzct_max[d] > imagesize[d] - 1:
-            raise IndexError("Invalid bounding box: %s -> %s, image size %s (all shapes in order yxczt); file at %s."
-                             % (yxzct_min, yxzct_max, imagesize, filepath))
-
-    # yxz to xyz (numpy to KLB)
-    cdef _np.uint32_t temp = roisize[0]
-    roisize[0] = roisize[1]
-    roisize[1] = temp
-
-    cdef _np.ndarray A = _np.empty(roisize[0:ndim], dtype, order="F")
-    readroi_inplace(A, filepath, yxzct_min, yxzct_max, numthreads, True)
-    return A.swapaxes(0,1)
+    cdef _np.ndarray[_np.uint32_t, ndim=1] roisize = 1 + _np.array(tczyx_max).astype(_np.uint32) - _np.array(tczyx_min).astype(_np.uint32)
+    cdef _np.ndarray A = _np.empty(roisize, header["datatype"])
+    readroi_inplace(A, filepath, tczyx_min, tczyx_max, numthreads, False)
+    return A
 
 
 
 ###########################################################
 # Reading KLB files, into pre-allocated memory            #
 ###########################################################
-
-
-def allocate(
-    imagesize_yxzct,
-    datatype
-    ):
-    """
-    Allocate an array to be used with the _inplace fuctions of KLB.
-    The returned array is in xyzct and "F" order, although it will appear to be in yxzct shape.
-
-    Arguments
-    ---------
-    imagesize_yxzct : shape of target array, in yxzct order (as in the 'imagesize_yxzct' field returned by pyklb.readheader(...))
-    datatype : NumPy dtype
-
-    Returns
-    -------
-    NumPy array compatible with pyklb's inplace functions.
-    """
-    # yxz to xyz (numpy to KLB)
-    temp = imagesize_yxzct[0]
-    imagesize_yxzct[0] = imagesize_yxzct[1]
-    imagesize_yxzct[1] = temp
-    return _np.empty(imagesize_yxzct, datatype, order="F").swapaxes(0,1)
-
 
 
 def readfull_inplace(
@@ -265,12 +195,11 @@ def readfull_inplace(
 
     Arguments
     ---------
-    A : array, shape(x[,y,z,c,t]), order='F'
-        Target array, note dimension order!
-        If needed, call A.swapaxes(0,1) to get numpy convention yxzct
+    A : array, shape([t,c,z,y,]x)
+        Target array, note dimension order
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = _mpc.cpu_count()
+    numthreads : int, optional, default = multiprocessing.cpu_count()
         Number of threads to use for decompression
     nochecks : bool, optional, default = False
         Whether to skip type and bounds checks
@@ -278,35 +207,16 @@ def readfull_inplace(
     Raises
     ------
     TypeError
-        when dtypes or memory layout of target array and KLB file don't match
-    IndexError
-        when size of target array and KLB file don't match
+        mismatch of source (KLB file) and target (numpy array) data type
     IOError
     """
-    if A.flags["F_CONTIGUOUS"] == False:
-        A = A.swapaxes(0,1)
-        if A.flags["F_CONTIGUOUS"] == False:
-            raise TypeError("Target array must be in xyzct shape and order='F'. Use pyklb.allocate(...) function to create target array.")
-
     if not nochecks:
         header = readheader(filepath)
         if A.dtype != header["datatype"]:
-            raise TypeError("KLB type: %s, target type: %s; file at %s." % (header["datatype"], A.dtype, filepath))
-
-        insize = header["imagesize_yxzct"]
-        # yxz to xyz (numpy to KLB)
-        temp = insize[0]
-        insize[0] = insize[1]
-        insize[1] = temp
-
-        outsize = A.shape
-        for d in range(A.ndim):
-            if insize[d] != outsize[d]:
-                raise IndexError("KLB size: %s, target size: %s (all shapes in order xyzct); file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
-        # handle trailing singleton dimensions, if any
-        for d in range(A.ndim, 5):
-            if insize[d] != 1:
-                raise IndexError("KLB size: %s, target size: %s (all shapes in order xyzct); file at %s." % (insize, [A.shape[i] for i in range(A.ndim)], filepath))
+            raise TypeError("KLB type: %s, numpy type: %s; file at %s." % (header["datatype"], A.dtype, filepath))
+        klbsize = _np.prod( header["imagesize_tczyx"] ) * A.itemsize
+        if A.nbytes != klbsize:
+            raise IOError("KLB size: %s, target size: %s (in bytes); file at %s." % (klbsize, A.nbytes, filepath))
 
     cdef _np.ndarray[_np.int8_t, ndim=1] buffer = _np.frombuffer(A, _np.int8)
     cdef KLB_DATA_TYPE ktype = INT8_TYPE # placeholder, overwritten by function call below
@@ -319,8 +229,8 @@ def readfull_inplace(
 def readroi_inplace(
     _np.ndarray A,
     str filepath,
-    _np.ndarray[_np.uint32_t, ndim=1] yxzct_min,
-    _np.ndarray[_np.uint32_t, ndim=1] yxzct_max,
+    tczyx_min,
+    tczyx_max,
     const int numthreads = _mpc.cpu_count(),
     bool nochecks = False
     ):
@@ -329,16 +239,15 @@ def readroi_inplace(
 
     Arguments
     ---------
-    A : array, shape(x[,y,z,c,t]), order='F'
-        Target array, note dimension order!
-        If needed, call A.swapaxes(0,1) to get numpy convention yxzct
+    A : array, shape([t,c,z,y,]x)
+        Target array, note dimension order
     filepath : string
         File system path to KLB file
-    yxzct_min : array, dtype=uint32, shape(1[,1,1,1,1])
-        Start of bounding box to read, vector of length 1-5
-    yxzct_max : array, dtype=uint32, shape(1[,1,1,1,1])
-        End of bounding box to read (inclusive), vector of length 1-5
-    numthreads, int, optional, default = _mpc.cpu_count()
+    tczyx_min : vector/list/tuple of length 1-5, order ([t,c,z,y,]x)
+        Start of bounding box to read
+    tczyx_max : vector/list/tuple of length 1-5, order ([t,c,z,y,]x)
+        End of bounding box to read, inclusive
+    numthreads, int, optional, default = multiprocessing.cpu_count()
         Number of threads to use for decompression
     nochecks : bool, optional, default = False
         Whether to skip type and bounds checks
@@ -346,45 +255,31 @@ def readroi_inplace(
     Raises
     ------
     TypeError
-        when dtypes or memory layout of target array and KLB file don't match
+        mismatch of source (KLB file) and target (numpy array) data type
     IndexError
-        when size of target array and KLB file don't match
+        when requested bounding box is out of bounds
     IOError
     """
-    # yxz to xyz (numpy to KLB)
-    cdef _np.uint32_t temp = yxzct_min[0]
-    yxzct_min[0] = yxzct_min[1]
-    yxzct_min[1] = temp
-
-    temp = yxzct_max[0]
-    yxzct_max[0] = yxzct_max[1]
-    yxzct_max[1] = temp
-
-    cdef _np.ndarray[_np.uint32_t, ndim=1] roisize = 1 + yxzct_max - yxzct_min
-
-    # if needed, pad bounds with 0 until len = 5, which is expected by C function
-    if len(yxzct_min) < 5:
-        yxzct_min = _np.hstack(( yxzct_min, _np.array([0 for i in range(5-len(yxzct_min))], _np.uint32) ))
-    if len(yxzct_max) < 5:
-        yxzct_max = _np.hstack(( yxzct_max, _np.array([0 for i in range(5-len(yxzct_max))], _np.uint32) ))
-
-    if A.flags["F_CONTIGUOUS"] == False:
-        A = A.swapaxes(0,1)
-        if A.flags["F_CONTIGUOUS"] == False:
-            raise TypeError("Target array must be in xyzct shape and order='F'. Use pyklb.allocate(...) function to create target array.")
+    # convert data type and dimension order, pad to len = 5, expected by C function
+    cdef _np.ndarray[_np.uint32_t, ndim=1] lb = _np.zeros((5,), _np.uint32)
+    cdef _np.ndarray[_np.uint32_t, ndim=1] ub = _np.zeros((5,), _np.uint32)
+    lb[:len(tczyx_min)] = _np.flipud(tczyx_min)
+    ub[:len(tczyx_max)] = _np.flipud(tczyx_max)
 
     if not nochecks:
         header = readheader(filepath)
         if A.dtype != header["datatype"]:
-            raise TypeError("KLB type: %s, target type: %s; file at %s." % (header["datatype"], A.dtype, filepath))
-        insize = header["imagesize_yxzct"]
-        outsize = A.shape
-        for d in range(A.ndim):
-            if yxzct_min[d] > yxzct_max[d] or yxzct_max[d] > insize[d] - 1:
-                raise IndexError("Invalid bounding box: %s -> %s, image size %s (all shapes in order xyzct); file at %s." % (yxzct_min, yxzct_max, insize, filepath))
+            raise TypeError("KLB type: %s, numpy type: %s; file at %s." % (header["datatype"], A.dtype, filepath))
+        klbsize = _np.prod( 1 + ub - lb ) * A.itemsize
+        if A.nbytes != klbsize:
+            raise IOError("KLB ROI size: %s, target size: %s (in bytes); file at %s." % (klbsize, A.nbytes, filepath))
+        fullsize = header["imagesize_tczyx"]
+        for d in range(5):
+            if lb[d] < 0 or ub[d] >= fullsize[-1-d] or lb[d] > ub[d]:
+                raise IndexError("ROI index out of bounds: KLB size: %s, requested ROI: %s-%s; file at %s" % (fullsize, _np.flipud(lb), _np.flipud(ub), filepath))
 
     cdef _np.ndarray[_np.int8_t, ndim=1] buffer = _np.frombuffer(A, _np.int8)
-    cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &yxzct_min[0], &yxzct_max[0], numthreads)
+    cdef int errid = readKLBroiInPlace(filepath, &buffer[0], &lb[0], &ub[0], numthreads)
     if errid != 0:
         raise IOError("Could not read KLB file '%s'. Error code %d" % (filepath, errid))
 
@@ -399,9 +294,9 @@ def writefull(
     _np.ndarray A,
     str filepath,
     const int numthreads = _mpc.cpu_count(),
-    _np.ndarray[_np.float32_t, ndim=1] pixelspacing = None,
+    pixelspacing_tczyx = None,
     str metadata = None,
-    _np.ndarray[_np.uint32_t, ndim=1] blocksize = None,
+    _np.ndarray[_np.uint32_t, ndim=1] blocksize_tczyx = None,
     str compression = "bzip2"
     ):
     """
@@ -409,17 +304,17 @@ def writefull(
 
     Arguments
     ---------
-    A : array, shape(x[,y,z,c,t])
-        Target array
+    A : array, shape([t,c,z,y,]x)
+        Target array, note dimension order
     filepath : string
         File system path to KLB file
-    numthreads : int, optional, default = _mpc.cpu_count()
+    numthreads : int, optional, default = multiprocessing.cpu_count()
         Number of threads to use for decompression
-    pixelspacing : array, dtype=float32, shape(1,1,1,1,1), optional, default=[1,1,1,1,1]
-        Spatial and temporal sampling, in µm and s.
+    pixelspacing_tczyx : vector/list/tuple of length 1-5, order ([t,c,z,y,]x)
+        Spatial and temporal sampling, in a.u., µm, sec.
     metadata : string, optional, default=None
-        Metadata to store in file.
-    blocksize : array, dtype=uint32, shape(1,1,1,1,1), optional
+        Metadata to store in file, currently unsupported by pyklb.
+    blocksize_tczyx : array, dtype=uint32, shape(5,), optional
         Shape of compression blocks
     compression : string, optional, default='bzip2'
         Compression method. Valid arguments are 'none', 'bzip2', 'zlib'
@@ -428,19 +323,17 @@ def writefull(
     ------
     IOError
     """
-    if A.flags["F_CONTIGUOUS"] == False:
-        A = A.swapaxes(0,1)
-        if A.flags["F_CONTIGUOUS"] == False:
-            raise TypeError("Target array must be in xyzct shape and order='F'. Use pyklb.allocate(...) function to create target array.")
-
     cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = _np.ones((5,), _np.uint32)
-    for d in range(A.ndim):
-        imagesize[d] = A.shape[d]
+    cdef _np.ndarray[_np.float32_t, ndim=1] sampling = _np.ones((5,), _np.float32)
+    
+    imagesize[:A.ndim] = _np.flipud([A.shape[i] for i in range(A.ndim)]).astype(_np.uint32)
+    if pixelspacing_tczyx != None:
+        sampling[:len(pixelspacing_tczyx)] = _np.flipud(pixelspacing_tczyx).astype(_np.float32)
 
     cdef KLB_DATA_TYPE ktype = _klbtype(A.dtype)
     cdef KLB_COMPRESSION_TYPE kcompression = _klbcompression(compression)
     cdef _np.ndarray[_np.int8_t, ndim=1] buffer = _np.frombuffer(A, _np.int8)
-    cdef int errid = writeKLBstack(&buffer[0], filepath, &imagesize[0], ktype, numthreads, &pixelspacing[0], &blocksize[0], kcompression, NULL)
+    cdef int errid = writeKLBstack(&buffer[0], filepath, &imagesize[0], ktype, numthreads, &sampling[0], &blocksize_tczyx[0], kcompression, NULL)
     if errid != 0:
         raise IOError("Could not write KLB file '%s'. Error code %d" % (filepath, errid))
 
