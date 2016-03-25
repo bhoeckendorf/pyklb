@@ -67,7 +67,7 @@ for (source, targetDir) in downloadFiles:
 includeDirs.append( np.get_include() )
 setup(
     name = "pyklb",
-    version = "0.0.1.dev1",
+    version = "0.0.1",
     description = "Python wrapper of the KLB file format, a high-performance file format for up to 5-dimensional arrays.",
     long_description = "See https://bitbucket.org/fernandoamat/keller-lab-block-filetype",
     url = "https://github.com/bhoeckendorf/pyklb",
