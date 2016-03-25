@@ -296,7 +296,7 @@ def writefull(
     const int numthreads = _mpc.cpu_count(),
     pixelspacing_tczyx = None,
     str metadata = None,
-    _np.ndarray[_np.uint32_t, ndim=1] blocksize_tczyx = None,
+    _np.ndarray[_np.uint32_t, ndim=1] blocksize_xyzct = None,
     str compression = "bzip2"
     ):
     """
@@ -314,8 +314,8 @@ def writefull(
         Spatial and temporal sampling, in a.u., µm, sec.
     metadata : string, optional, default=None
         Metadata to store in file, currently unsupported by pyklb.
-    blocksize_tczyx : array, dtype=uint32, shape(5,), optional
-        Shape of compression blocks
+    blocksize_xyzct : array, dtype=uint32, shape(5,), optional
+        Shape of compression blocks, note dimension order!
     compression : string, optional, default='bzip2'
         Compression method. Valid arguments are 'none', 'bzip2', 'zlib'
 
@@ -333,7 +333,7 @@ def writefull(
     cdef KLB_DATA_TYPE ktype = _klbtype(A.dtype)
     cdef KLB_COMPRESSION_TYPE kcompression = _klbcompression(compression)
     cdef _np.ndarray[_np.int8_t, ndim=1] buffer = _np.frombuffer(A, _np.int8)
-    cdef int errid = writeKLBstack(&buffer[0], filepath, &imagesize[0], ktype, numthreads, &sampling[0], &blocksize_tczyx[0], kcompression, NULL)
+    cdef int errid = writeKLBstack(&buffer[0], filepath, &imagesize[0], ktype, numthreads, &sampling[0], &blocksize_xyzct[0], kcompression, NULL)
     if errid != 0:
         raise IOError("Could not write KLB file '%s'. Error code %d" % (filepath, errid))
 
