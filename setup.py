@@ -11,11 +11,11 @@ try:
 except ImportError:
     from distutils.core import setup
     from distutils.extension import Extension
-if sys.version_info <= (2,):
-	import urllib as req
-else:
-	from urllib import request as req
-	
+try:
+    from urllib import request as req
+except ImportError:
+    import urllib as req
+
 
 # version (by commit id) of main library to use
 klbCommitId = "5edcaecc858911c7b3855579bde5cb3116cb4680"
@@ -46,11 +46,11 @@ errorMsg = """
 platformName = platform.uname()[0].lower()
 if platform.architecture()[0].startswith("64"):
     if "linux" in platformName:
-        downloadFiles.append(( "%s/bin/libklb.so" % klbUrl, "pyklb/lib" ))
+        downloadFiles.append(( "%s/bin/libklb.so" % klbUrl, libraryDirs[0] ))
     elif "darwin" in platformName:
-        downloadFiles.append(( "%s/bin/libklb.dylib" % klbUrl, "pyklb/lib" ))
+        downloadFiles.append(( "%s/bin/libklb.dylib" % klbUrl, libraryDirs[0] ))
     elif "win" in platformName:
-        downloadFiles.append(( "%s/bin/klb.dll" % klbUrl, "pyklb/lib" ))
+        downloadFiles.append(( "%s/bin/klb.dll" % klbUrl, libraryDirs[0] ))
         downloadFiles.append(( "%s/bin/klb.lib" % klbUrl, libraryDirs[0] ))
         # fix windows build with msvc
         #downloadFiles.append(( "http://msinttypes.googlecode.com/svn/trunk/stdint.h", includeDirs[0] ))
@@ -76,7 +76,7 @@ setup(
     long_description = "See https://bitbucket.org/fernandoamat/keller-lab-block-filetype",
     url = "https://github.com/bhoeckendorf/pyklb",
     ext_modules = cythonize([
-        Extension("pyklb", ["pyklb/pyklb.pyx"], include_dirs=includeDirs, library_dirs=libraryDirs + ["pyklb/lib"], libraries=["klb"])
+        Extension("pyklb", ["src/pyklb.pyx"], include_dirs=includeDirs, library_dirs=libraryDirs, libraries=["klb"])
         ]),
     setup_requires = ["numpy"],
     install_requires = ["numpy"]

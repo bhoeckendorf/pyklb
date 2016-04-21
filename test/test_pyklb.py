@@ -1,7 +1,11 @@
-import os, urllib
+import os
 import numpy as np
 import pyklb
 import unittest
+try:
+    from urllib import request as req
+except ImportError:
+    import urllib as req
 
 
 class KlbTests(unittest.TestCase):
