@@ -22,10 +22,10 @@ class KlbTests(unittest.TestCase):
 
         print("Downloading test image to %s ..." % self.testread_filepath)
         if os.path.exists(self.testread_filepath):
-            raise Error("%s exists, please move or delete the file" % self.testread_filepath)
-        urllib.urlretrieve( "%s/testData/img.klb" % klbUrl, self.testread_filepath )
+            raise Exception("%s exists, please move or delete the file" % self.testread_filepath)
+        req.urlretrieve( "%s/testData/img.klb" % klbUrl, self.testread_filepath )
         if not os.path.exists(self.testread_filepath):
-            raise Error("Downloading failed, tests aborted")
+            raise Exception("Downloading failed, tests aborted")
 
     @classmethod
     def tearDownClass(self):
@@ -35,7 +35,7 @@ class KlbTests(unittest.TestCase):
             print("Removing temporary file %s" % fp)
             os.remove(fp)
             if os.path.exists(fp):
-                raise Error("Failed to remove temporary file %s,\n    please delete it manually" % fp)
+                raise Exception("Failed to remove temporary file %s,\n    please delete it manually" % fp)
 
     def test_header(self):
         header = pyklb.readheader(self.testread_filepath)
@@ -111,9 +111,9 @@ class KlbTests(unittest.TestCase):
         pyklb.writefull(img, self.testwrite_filepath, pixelspacing_tczyx=[0.5, 0.5, 5.0])
         self.assertTrue(os.path.exists(self.testwrite_filepath))
         img2 = pyklb.readfull(self.testwrite_filepath)
-        self.assertEquals(img.dtype, img2.dtype)
-        self.assertEquals(img.shape, img2.shape)
-        self.assertEquals(np.mean(img), np.mean(img2))
+        self.assertEqual(img.dtype, img2.dtype)
+        self.assertEqual(img.shape, img2.shape)
+        self.assertEqual(np.mean(img), np.mean(img2))
 
         header = pyklb.readheader(self.testwrite_filepath)
         self.assertTrue(np.all( header["pixelspacing_tczyx"] == [1, 1, 0.5, 0.5, 5.0] ))
