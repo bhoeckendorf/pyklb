@@ -1,0 +1,41 @@
+package:
+    name: pyklb
+
+  # If we're using a non-tagged revision, append '.postN' to the version
+  {% if GIT_DESCRIBE_NUMBER|int != 0 %}
+    version: {{GIT_DESCRIBE_TAG[1:]}}.post{{GIT_DESCRIBE_NUMBER}}
+  {% else %}
+    version: {{GIT_DESCRIBE_TAG[1:]}}
+  {% endif %}
+
+source:
+  path: ../
+
+build:
+  number: 0
+  
+  # This must be built with the --numpy option, for example:
+  # conda build --numpy=1.10 conda-recipe
+  string: np{{CONDA_NPY}}py{{CONDA_PY}}_{{PKG_BUILDNUM}}_g{{GIT_FULL_HASH[:7]}}
+
+requirements:
+  build:
+    - python {{PY_VER}}*
+    - numpy {{NPY_VER}}*
+    - cython
+    - klb
+
+  run:
+    - python {{PY_VER}}*
+    - numpy {{NPY_VER}}*
+    - klb
+
+test:
+  imports:
+    - pyklb
+
+about:
+  home: https://github.com/bhoeckendorf/pyklb
+  license: BSD
+  license_file: LICENSE.txt
+  summary: Python bindings for the Keller Lab Block file type (klb) library

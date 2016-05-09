@@ -218,6 +218,8 @@ def readfull_inplace(
         klbsize = _np.prod( header["imagesize_tczyx"] ) * A.itemsize
         if A.nbytes != klbsize:
             raise IOError("KLB size: %s, target size: %s (in bytes); file at %s." % (klbsize, A.nbytes, filepath))
+        if not A.flags.c_contiguous:
+            raise TypeError("Pre-allocated array must be C_CONTIGUOUS.")
 
     cdef KLB_DATA_TYPE ktype = INT8_TYPE # placeholder, overwritten by function call below
     cdef int errid = readKLBstackInPlace(_cstr(filepath), A.data, &ktype, numthreads)
@@ -273,6 +275,8 @@ def readroi_inplace(
         klbsize = _np.prod( 1 + ub - lb ) * A.itemsize
         if A.nbytes != klbsize:
             raise IOError("KLB ROI size: %s, target size: %s (in bytes); file at %s." % (klbsize, A.nbytes, filepath))
+        if not A.flags.c_contiguous:
+            raise TypeError("Pre-allocated array must be C_CONTIGUOUS.")
         fullsize = header["imagesize_tczyx"]
         for d in range(5):
             if lb[d] < 0 or ub[d] >= fullsize[-1-d] or lb[d] > ub[d]:
@@ -325,6 +329,9 @@ def writefull(
     cdef _np.ndarray[_np.uint32_t, ndim=1] imagesize = _np.ones((5,), _np.uint32)
     cdef _np.ndarray[_np.float32_t, ndim=1] sampling = _np.ones((5,), _np.float32)
     
+    if not A.flags.c_contiguous:
+        raise TypeError("Array must be C_CONTIGUOUS.")
+
     imagesize[:A.ndim] = _np.flipud([A.shape[i] for i in range(A.ndim)]).astype(_np.uint32)
     if pixelspacing_tczyx != None:
         sampling[:len(pixelspacing_tczyx)] = _np.flipud(pixelspacing_tczyx).astype(_np.float32)
