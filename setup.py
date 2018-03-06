@@ -17,8 +17,8 @@ except ImportError:
     import urllib as req
 
 
-includeDirs = [ np.get_include() ]
-libraryDirs = []
+includeDirs = [ "build/include", np.get_include() ]
+libraryDirs = [ "build/lib" ]
 
 def download_klb_files( includeDirs, libraryDirs ):
     # version (by commit id) of main library to use
@@ -74,8 +74,6 @@ if '--skip-klb-download' in sys.argv:
     sys.argv.pop(i)
 else:
     # download required KLB headers,
-    includeDirs.append( "build/include" )
-    libraryDirs.append( "build/lib" )
     download_klb_files(includeDirs, libraryDirs)
 
 setup(
