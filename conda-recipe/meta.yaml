@@ -20,6 +20,8 @@ build:
 
 requirements:
   build:
+    - gxx_linux-64 # [linux]
+  host:
     - python {{PY_VER}}*
     - numpy {{NPY_VER}}*
     - cython
