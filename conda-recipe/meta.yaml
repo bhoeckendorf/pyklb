@@ -12,7 +12,7 @@ source:
   path: ../
 
 build:
-  number: 0
+  number: 1
   
   # This must be built with the --numpy option, for example:
   # conda build --numpy=1.10 conda-recipe
