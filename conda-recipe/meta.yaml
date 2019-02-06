@@ -12,7 +12,7 @@ source:
   path: ../
 
 build:
-  number: 0
+  number: 1
   
   # This must be built with the --numpy option, for example:
   # conda build --numpy=1.10 conda-recipe
@@ -20,6 +20,8 @@ build:
 
 requirements:
   build:
+    - gxx_linux-64 # [linux]
+  host:
     - python {{PY_VER}}*
     - numpy {{NPY_VER}}*
     - cython
@@ -31,6 +33,10 @@ requirements:
     - klb
 
 test:
+
+  source_files:
+    - test
+
   imports:
     - pyklb
 

@@ -1,2 +1,2 @@
-cd ${SRC_DIR}/test
+cd test
 python test_pyklb.py
