@@ -1,4 +1,4 @@
-#!python
+#!/usr/bin/env python3
 #cython: initializedcheck=False, boundscheck=False, overflowcheck=False
 
 import cython
