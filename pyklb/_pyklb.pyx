@@ -421,4 +421,4 @@ cdef inline KLB_COMPRESSION_TYPE _klbcompression(str pcompression):
         return BZIP2
     elif pcompression == "zlib":
         return ZLIB
-    raise Exception("Unknown or unsupported compression of KLB array: %d" % pcompression)
+    raise Exception("Unknown or unsupported compression of KLB array: %s" % pcompression)
